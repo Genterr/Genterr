@@ -535,3 +535,403 @@ class ReviewManager:
             metadata=json.loads(row["metadata"]) if row["metadata"] else None,
             last_updated=datetime.fromisoformat(row["last_updated"]) if row["last_updated"] else None
         )
+
+    # Ranking Algorithm Methods
+    async def _rank_by_weighted_average(
+        self,
+        reviews: List[Review],
+        weights: Dict[str, float]
+    ) -> List[Review]:
+        """Rank reviews using weighted average of metrics"""
+        for review in reviews:
+            if not review.metrics:
+                continue
+                
+            # Calculate weighted score
+            weighted_score = (
+                weights["helpfulness"] * review.metrics.helpfulness_score +
+                weights["relevance"] * review.metrics.relevance_score +
+                weights["quality"] * review.metrics.quality_score +
+                weights["authenticity"] * review.metrics.authenticity_score +
+                weights["recency"] * review.metrics.recency_score
+            )
+            review.metrics.weighted_score = weighted_score
+            
+        return sorted(
+            reviews,
+            key=lambda r: getattr(r.metrics, "weighted_score", 0.0),
+            reverse=True
+        )
+
+    async def _rank_by_bayesian_average(
+        self,
+        reviews: List[Review]
+    ) -> List[Review]:
+        """Rank reviews using Bayesian average"""
+        # Calculate prior values
+        total_votes = sum(r.helpful_votes + r.unhelpful_votes for r in reviews)
+        if total_votes == 0:
+            return reviews
+            
+        C = 10  # Confidence parameter
+        m = sum(r.helpful_votes for r in reviews) / total_votes  # Prior mean
+        
+        for review in reviews:
+            total = review.helpful_votes + review.unhelpful_votes
+            if total == 0:
+                score = m
+            else:
+                score = (C * m + review.helpful_votes) / (C + total)
+            
+            if review.metrics:
+                review.metrics.weighted_score = score
+            
+        return sorted(
+            reviews,
+            key=lambda r: getattr(r.metrics, "weighted_score", 0.0),
+            reverse=True
+        )
+
+    async def _rank_by_time_decay(
+        self,
+        reviews: List[Review]
+    ) -> List[Review]:
+        """Rank reviews using time decay factor"""
+        now = datetime.utcnow()
+        half_life = timedelta(days=30)  # Configurable half-life
+        
+        for review in reviews:
+            age = now - review.created_at
+            decay_factor = 0.5 ** (age / half_life)
+            
+            if review.metrics:
+                base_score = review.metrics.quality_score
+                review.metrics.weighted_score = base_score * decay_factor
+            
+        return sorted(
+            reviews,
+            key=lambda r: getattr(r.metrics, "weighted_score", 0.0),
+            reverse=True
+        )
+
+    async def _rank_by_wilson_score(
+        self,
+        reviews: List[Review]
+    ) -> List[Review]:
+        """Rank reviews using Wilson score interval"""
+        from scipy.stats import norm
+        
+        z = 1.96  # 95% confidence interval
+        
+        for review in reviews:
+            n = review.helpful_votes + review.unhelpful_votes
+            if n == 0:
+                score = 0
+            else:
+                p = review.helpful_votes / n
+                score = (
+                    (p + z*z/(2*n) - z * np.sqrt((p*(1-p) + z*z/(4*n))/n))
+                    / (1 + z*z/n)
+                )
+            
+            if review.metrics:
+                review.metrics.weighted_score = score
+            
+        return sorted(
+            reviews,
+            key=lambda r: getattr(r.metrics, "weighted_score", 0.0),
+            reverse=True
+        )
+
+    # Analytics Helper Methods
+    def _calculate_average_rating(self, reviews: List[Review]) -> float:
+        """Calculate average overall rating"""
+        if not reviews:
+            return 0.0
+        return np.mean([r.rating.overall for r in reviews])
+
+    def _calculate_rating_distribution(
+        self,
+        reviews: List[Review]
+    ) -> Dict[int, int]:
+        """Calculate distribution of ratings"""
+        distribution = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+        for review in reviews:
+            rating = round(review.rating.overall)
+            distribution[rating] = distribution.get(rating, 0) + 1
+        return distribution
+
+    def _calculate_sentiment_distribution(
+        self,
+        reviews: List[Review]
+    ) -> Dict[str, int]:
+        """Calculate distribution of sentiment"""
+        distribution = {"positive": 0, "neutral": 0, "negative": 0}
+        for review in reviews:
+            blob = TextBlob(review.content)
+            if blob.sentiment.polarity > 0.1:
+                distribution["positive"] += 1
+            elif blob.sentiment.polarity < -0.1:
+                distribution["negative"] += 1
+            else:
+                distribution["neutral"] += 1
+        return distribution
+
+    async def _calculate_volume_trend(
+        self,
+        reviews: List[Review]
+    ) -> List[Dict[str, Any]]:
+        """Calculate review volume trend over time"""
+        df = pd.DataFrame([
+            {
+                "date": review.created_at.date(),
+                "count": 1
+            }
+            for review in reviews
+        ])
+        
+        if df.empty:
+            return []
+            
+        daily_counts = df.groupby("date")["count"].sum().reset_index()
+        return daily_counts.to_dict("records")
+
+    def _calculate_helpful_ratio(self, reviews: List[Review]) -> float:
+        """Calculate ratio of helpful votes"""
+        total_helpful = sum(r.helpful_votes for r in reviews)
+        total_votes = sum(r.helpful_votes + r.unhelpful_votes for r in reviews)
+        return total_helpful / total_votes if total_votes > 0 else 0.0
+
+    async def _extract_top_keywords(
+        self,
+        reviews: List[Review],
+        top_n: int = 10
+    ) -> List[Tuple[str, float]]:
+        """Extract top keywords from reviews using TF-IDF"""
+        texts = [review.content for review in reviews]
+        
+        if not texts:
+            return []
+            
+        # Fit TF-IDF vectorizer
+        tfidf_matrix = self._vectorizer.fit_transform(texts)
+        
+        # Get feature names and scores
+        feature_names = self._vectorizer.get_feature_names_out()
+        scores = np.mean(tfidf_matrix.toarray(), axis=0)
+        
+        # Sort by score and get top N
+        top_indices = np.argsort(scores)[-top_n:]
+        return [
+            (feature_names[i], float(scores[i]))
+            for i in top_indices
+        ]
+
+    def _calculate_quality_metrics(
+        self,
+        reviews: List[Review]
+    ) -> Dict[str, float]:
+        """Calculate various quality metrics for reviews"""
+        if not reviews:
+            return {
+                "average_length": 0.0,
+                "average_helpful_ratio": 0.0,
+                "average_sentiment": 0.0,
+                "completeness_score": 0.0
+            }
+            
+        metrics = {
+            "average_length": np.mean([len(r.content) for r in reviews]),
+            "average_helpful_ratio": self._calculate_helpful_ratio(reviews),
+            "average_sentiment": np.mean([
+                TextBlob(r.content).sentiment.polarity
+                for r in reviews
+            ]),
+            "completeness_score": np.mean([
+                self._calculate_completeness_score(r)
+                for r in reviews
+            ])
+        }
+        
+        return {k: float(v) for k, v in metrics.items()}
+
+    def _calculate_completeness_score(self, review: Review) -> float:
+        """Calculate completeness score for a review"""
+        score = 0.0
+        total_weight = 0.0
+        
+        # Content length (weight: 0.3)
+        weight = 0.3
+        target_length = 200
+        length_score = min(len(review.content) / target_length, 1.0)
+        score += length_score * weight
+        total_weight += weight
+        
+        # Rating completeness (weight: 0.2)
+        weight = 0.2
+        rating_fields = len([
+            f for f in dataclasses.fields(review.rating)
+            if getattr(review.rating, f.name) is not None
+        ])
+        rating_score = rating_fields / len(dataclasses.fields(review.rating))
+        score += rating_score * weight
+        total_weight += weight
+        
+        # Has title (weight: 0.1)
+        weight = 0.1
+        if review.title:
+            score += weight
+        total_weight += weight
+        
+        # Normalized final score
+        return score / total_weight if total_weight > 0 else 0.0
+
+    async def _calculate_review_metrics(
+        self,
+        content: str,
+        rating: ReviewRating,
+        author_id: str
+    ) -> ReviewMetrics:
+        """Calculate metrics for a review"""
+        # Calculate helpfulness score (initial)
+        helpfulness_score = 0.5  # Neutral initial score
+        
+        # Calculate relevance score
+        blob = TextBlob(content)
+        relevance_score = min(1.0, len(content) / self.config.max_content_length)
+        
+        # Calculate quality score
+        quality_components = {
+            "length": min(1.0, len(content) / 200),  # Target length of 200
+            "sentiment": (blob.sentiment.polarity + 1) / 2,  # Normalize to 0-1
+            "rating_completeness": len([
+                f for f in dataclasses.fields(rating)
+                if getattr(rating, f.name) is not None
+            ]) / len(dataclasses.fields(rating))
+        }
+        quality_score = np.mean(list(quality_components.values()))
+        
+        # Calculate authenticity score (placeholder)
+        authenticity_score = 0.8  # Could be based on user history/verification
+        
+        # Calculate recency score
+        recency_score = 1.0  # New review is maximally recent
+        
+        # Calculate initial weighted score
+        weighted_score = np.mean([
+            helpfulness_score,
+            relevance_score,
+            quality_score,
+            authenticity_score,
+            recency_score
+        ])
+        
+        return ReviewMetrics(
+            helpfulness_score=helpfulness_score,
+            relevance_score=relevance_score,
+            quality_score=quality_score,
+            authenticity_score=authenticity_score,
+            recency_score=recency_score,
+            weighted_score=weighted_score,
+            confidence=0.8  # Initial confidence score
+        )
+    async def _validate_review(
+        self,
+        content: str,
+        rating: ReviewRating,
+        author_id: str,
+        subject_id: str
+    ) -> None:
+        """Validate review content and rating"""
+        # Validate content length
+        if len(content) < self.config.min_content_length:
+            raise ReviewValidationError(
+                f"Review content too short. Minimum length is "
+                f"{self.config.min_content_length} characters"
+            )
+            
+        if len(content) > self.config.max_content_length:
+            raise ReviewValidationError(
+                f"Review content too long. Maximum length is "
+                f"{self.config.max_content_length} characters"
+            )
+            
+        # Validate rating values
+        for field in dataclasses.fields(rating):
+            value = getattr(rating, field.name)
+            if value is not None and not isinstance(value, (dict, type(None))):
+                if not self.config.min_rating <= value <= self.config.max_rating:
+                    raise ReviewValidationError(
+                        f"Invalid rating value for {field.name}. "
+                        f"Must be between {self.config.min_rating} and "
+                        f"{self.config.max_rating}"
+                    )
+
+    async def _get_subject_reviews(
+        self,
+        subject_id: str,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
+    ) -> List[Review]:
+        """Get all reviews for a subject"""
+        query = """
+            SELECT * FROM reviews 
+            WHERE subject_id = ? 
+            AND status = ?
+        """
+        params = [subject_id, ReviewStatus.PUBLISHED.value]
+        
+        if start_time:
+            query += " AND created_at >= ?"
+            params.append(start_time.isoformat())
+        if end_time:
+            query += " AND created_at <= ?"
+            params.append(end_time.isoformat())
+            
+        query += " ORDER BY created_at DESC"
+        
+        def _execute():
+            with sqlite3.connect(self.config.database_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(query, params)
+                return cursor.fetchall()
+                
+        rows = await asyncio.get_event_loop().run_in_executor(self._executor, _execute)
+        return [self._row_to_review(row) for row in rows]
+
+    async def _log_review_history(
+        self,
+        review_id: str,
+        actor_id: str,
+        action_type: str,
+        previous_status: Optional[ReviewStatus],
+        new_status: ReviewStatus,
+        details: Dict[str, Any]
+    ) -> None:
+        """Log review history entry"""
+        query = """
+            INSERT INTO review_history (
+                id, review_id, timestamp, actor_id,
+                action_type, previous_status, new_status,
+                details, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        params = (
+            str(uuid.uuid4()),
+            review_id,
+            datetime.utcnow().isoformat(),
+            actor_id,
+            action_type,
+            previous_status.value if previous_status else None,
+            new_status.value,
+            json.dumps(details),
+            None
+        )
+        
+        def _execute():
+            with sqlite3.connect(self.config.database_path) as conn:
+                conn.execute(query, params)
+                conn.commit()
+                
+        await asyncio.get_event_loop().run_in_executor(self._executor, _execute)
