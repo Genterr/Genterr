@@ -1,8 +1,8 @@
 # src/utils/api/api_client.py
-# Created: 2025-01-29 20:41:55
+# Created: 2025-01-29 21:17:38
 # Author: Genterr
 
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Tuple, Protocol
 from dataclasses import dataclass
 from enum import Enum
 import asyncio
@@ -12,7 +12,6 @@ import json
 import aiohttp
 import yarl
 from datetime import datetime, timedelta
-from ..security.platform_security import PlatformSecurity
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +56,12 @@ class APIConfig:
     max_connections: int = 100
     connection_timeout: float = 10.0
 
+class SecurityProvider(Protocol):
+    """Protocol for security providers"""
+    async def get_auth_header(self) -> Dict[str, str]:
+        """Get authentication header"""
+        ...
+
 @dataclass
 class APIResponse:
     """Container for API response data"""
@@ -83,9 +88,15 @@ class APIClient:
     def __init__(
         self,
         config: APIConfig,
-        security: Optional[PlatformSecurity] = None
+        security: Optional[SecurityProvider] = None
     ):
-        """Initialize APIClient with configuration"""
+        """
+        Initialize APIClient with configuration
+        
+        Args:
+            config: API configuration
+            security: Optional security provider for authentication
+        """
         self.config = config
         self.security = security
         self._session: Optional[aiohttp.ClientSession] = None
