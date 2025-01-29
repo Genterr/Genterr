@@ -1,5 +1,5 @@
 # src/utils/analytics/__init__.py
-# Created: 2025-01-29 20:01:12
+# Created: 2025-01-29 20:40:38
 # Author: Genterr
 
 """
@@ -7,23 +7,23 @@ Analytics utility package for data collection, analysis, and reporting.
 """
 
 from .analytics_manager import (
-    AnalyticsManager,
+    PlatformAnalytics,
     AnalyticsConfig,
-    MetricType,
+    AnalyticsMetricType,
     TimeFrame,
-    AggregationType,
+    MetricData,
     AnalyticsError,
-    DataCollectionError,
-    AnalysisError
+    DataProcessingError,
+    VisualizationError
 )
 
 __all__ = [
-    'AnalyticsManager',
+    'PlatformAnalytics',
     'AnalyticsConfig',
-    'MetricType',
+    'AnalyticsMetricType',
     'TimeFrame',
-    'AggregationType',
+    'MetricData',
     'AnalyticsError',
-    'DataCollectionError',
-    'AnalysisError'
+    'DataProcessingError',
+    'VisualizationError'
 ]
