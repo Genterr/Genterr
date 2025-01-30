@@ -5,6 +5,19 @@ from datetime import datetime
 from dataclasses import dataclass
 from enum import Enum
 
+# Custom exceptions for better error handling
+class AgentError(Exception):
+    """Base exception for agent-related errors"""
+    pass
+
+class MetricsError(AgentError):
+    """Raised when metrics update fails"""
+    pass
+
+class ValidationError(AgentError):
+    """Raised when task validation fails"""
+    pass
+
 # Add status enum for type safety
 class AgentStatus(Enum):
     INITIALIZED = "initialized"
@@ -20,6 +33,8 @@ class AgentConfig:
     timeout_seconds: int = 300
     retry_attempts: int = 3
     logging_level: str = "INFO"
+    enable_metrics: bool = True
+    metrics_update_threshold: float = 0.0001  # Minimum change to update metrics
 
 class BaseAgent:
     """
@@ -40,6 +55,14 @@ class BaseAgent:
         description: str = None,
         config: AgentConfig = None
     ):
+        """
+        Initialize a new agent instance.
+
+        Args:
+            name: The name of the agent
+            description: Optional description of the agent's purpose
+            config: Optional configuration settings
+        """
         self.agent_id: UUID = uuid4()
         self.name: str = name
         self.description: str = description or ""
@@ -50,14 +73,23 @@ class BaseAgent:
             "success_rate": 0.0,
             "average_rating": 0.0,
             "errors": 0,
-            "total_processing_time": 0.0
+            "total_processing_time": 0.0,
+            "last_updated": datetime.utcnow().isoformat()
         }
         self.capabilities: Dict[str, bool] = {}
         self.config = config or AgentConfig()
         
-        # Setup logging
+        # Setup logging with enhanced format
         self.logger = logging.getLogger(f"agent.{self.name}")
         self.logger.setLevel(self.config.logging_level)
+        
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            )
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
 
     @property
     def status(self) -> AgentStatus:
@@ -66,12 +98,23 @@ class BaseAgent:
 
     @status.setter
     def status(self, new_status: AgentStatus) -> None:
-        """Set agent status with logging"""
-        self._status = new_status
-        self.logger.info(f"Agent {self.name} status changed to {new_status}")
+        """
+        Set agent status with logging.
+        
+        Args:
+            new_status: New status to set
+        """
+        if new_status != self._status:
+            self._status = new_status
+            self.logger.info(f"Agent {self.name} status changed to {new_status}")
 
     def initialize(self) -> bool:
-        """Initialize agent resources and connections"""
+        """
+        Initialize agent resources and connections.
+        
+        Returns:
+            bool: True if initialization successful, False otherwise
+        """
         try:
             self.logger.info(f"Initializing agent {self.name}")
             # Add initialization logic here
@@ -84,8 +127,8 @@ class BaseAgent:
 
     async def process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Process a given task and return results
-        Must be implemented by specific agent types
+        Process a given task and return results.
+        Must be implemented by specific agent types.
         
         Args:
             task: Dictionary containing task details
@@ -99,34 +142,107 @@ class BaseAgent:
         raise NotImplementedError("Subclasses must implement process_task method")
 
     def validate_task(self, task: Dict[str, Any]) -> bool:
-        """Validate task input"""
-        required_fields = ["task_id", "type", "data"]
-        return all(field in task for field in required_fields)
+        """
+        Validate task input.
+        
+        Args:
+            task: Task dictionary to validate
+            
+        Returns:
+            bool: True if task is valid, False otherwise
+            
+        Raises:
+            ValidationError: If task is invalid
+        """
+        try:
+            required_fields = ["task_id", "type", "data"]
+            if not all(field in task for field in required_fields):
+                missing_fields = [f for f in required_fields if f not in task]
+                raise ValidationError(f"Missing required fields: {missing_fields}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Task validation failed: {str(e)}")
+            raise ValidationError(f"Task validation failed: {str(e)}")
 
     def update_metrics(self, task_result: Dict[str, Any]) -> None:
-        """Update agent performance metrics after task completion"""
-        self.metrics["tasks_completed"] += 1
+        """
+        Update agent performance metrics after task completion.
         
-        if task_result.get("success", False):
-            current_success = self.metrics["success_rate"] * (self.metrics["tasks_completed"] - 1)
-            self.metrics["success_rate"] = (current_success + 1) / self.metrics["tasks_completed"]
-        
-        if "processing_time" in task_result:
-            self.metrics["total_processing_time"] += task_result["processing_time"]
+        Args:
+            task_result: Dictionary containing task results
+                - success (bool): Whether the task was successful
+                - processing_time (float): Time taken to process the task
+                - rating (float, optional): Rating of task execution
+                
+        Raises:
+            MetricsError: If metrics update fails
+        """
+        try:
+            if not self.config.enable_metrics:
+                return
+
+            # Update task count
+            self.metrics["tasks_completed"] += 1
+            
+            # Update success rate
+            success = task_result.get("success", False)
+            if success:
+                total_tasks = self.metrics["tasks_completed"]
+                previous_successes = self.metrics["success_rate"] * (total_tasks - 1)
+                new_success_rate = (previous_successes + 1) / total_tasks
+                
+                if abs(new_success_rate - self.metrics["success_rate"]) >= self.config.metrics_update_threshold:
+                    self.metrics["success_rate"] = new_success_rate
+            else:
+                self.metrics["errors"] += 1
+            
+            # Update processing time
+            if "processing_time" in task_result:
+                self.metrics["total_processing_time"] += task_result["processing_time"]
+            
+            # Update rating if provided
+            if "rating" in task_result:
+                new_rating = task_result["rating"]
+                total_tasks = self.metrics["tasks_completed"]
+                previous_rating_total = self.metrics["average_rating"] * (total_tasks - 1)
+                new_average_rating = (previous_rating_total + new_rating) / total_tasks
+                
+                if abs(new_average_rating - self.metrics["average_rating"]) >= self.config.metrics_update_threshold:
+                    self.metrics["average_rating"] = new_average_rating
+            
+            # Update timestamp
+            self.metrics["last_updated"] = datetime.utcnow().isoformat()
+            
+            self.logger.debug(f"Updated metrics for agent {self.name}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to update metrics: {str(e)}")
+            raise MetricsError(f"Metrics update failed: {str(e)}")
 
     def get_status(self) -> Dict[str, Any]:
-        """Get current agent status and metrics"""
+        """
+        Get current agent status and metrics.
+        
+        Returns:
+            Dictionary containing current status and metrics
+        """
         return {
             "agent_id": str(self.agent_id),
             "name": self.name,
             "status": self.status.value,
             "metrics": self.metrics,
             "capabilities": self.capabilities,
-            "uptime": (datetime.utcnow() - self.created_at).total_seconds()
+            "uptime": (datetime.utcnow() - self.created_at).total_seconds(),
+            "last_updated": datetime.utcnow().isoformat()
         }
 
     def shutdown(self) -> None:
-        """Cleanup and shutdown agent"""
+        """
+        Cleanup and shutdown agent.
+        
+        Raises:
+            AgentError: If shutdown fails
+        """
         try:
             self.logger.info(f"Shutting down agent {self.name}")
             # Add cleanup logic here
@@ -134,6 +250,8 @@ class BaseAgent:
         except Exception as e:
             self.logger.error(f"Error during shutdown: {str(e)}")
             self.status = AgentStatus.ERROR
+            raise AgentError(f"Shutdown failed: {str(e)}")
 
     def __repr__(self) -> str:
+        """Return string representation of the agent"""
         return f"BaseAgent(name='{self.name}', id={self.agent_id}, status={self.status})"
