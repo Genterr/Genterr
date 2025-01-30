@@ -1,7 +1,7 @@
 import logging
 from typing import Dict, Any, Optional, List
 from uuid import UUID, uuid4
-from datetime import datetime
+from datetime import datetime, UTC
 from dataclasses import dataclass
 from enum import Enum
 
@@ -66,7 +66,7 @@ class BaseAgent:
         self.agent_id: UUID = uuid4()
         self.name: str = name
         self.description: str = description or ""
-        self.created_at: datetime = datetime.utcnow()
+        self.created_at: datetime = datetime.now(UTC)
         self._status: AgentStatus = AgentStatus.INITIALIZED
         self.metrics: Dict[str, Any] = {
             "tasks_completed": 0,
@@ -74,7 +74,7 @@ class BaseAgent:
             "average_rating": 0.0,
             "errors": 0,
             "total_processing_time": 0.0,
-            "last_updated": datetime.utcnow().isoformat()
+            "last_updated": datetime.now(UTC).isoformat()
         }
         self.capabilities: Dict[str, bool] = {}
         self.config = config or AgentConfig()

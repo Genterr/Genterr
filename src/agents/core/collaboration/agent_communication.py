@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, UTC
 from typing import Dict, List, Any, Optional, Set
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -166,13 +167,13 @@ class AgentCommunication:
 
             expires_at = None
             if ttl or self.config.message_ttl:
-                expires_at = datetime.utcnow() + timedelta(
+                expires_at = datetime.now(UTC) + timedelta(
                     seconds=(ttl or self.config.message_ttl)
                 )
 
             message = Message(
                 id=uuid4(),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(UTC),
                 from_agent=from_agent,
                 to_agent=to_agent,
                 type=message_type,
@@ -234,10 +235,10 @@ class AgentCommunication:
                 self.active_channels[channel_id] = set(participants)
                 self.channel_metadata[channel_id] = {
                     **(metadata or {}),
-                    "created_at": datetime.utcnow(),
+                    "created_at": datetime.now(UTC),
                     "participant_count": len(participants),
                     "message_count": 0,
-                    "last_activity": datetime.utcnow()
+                    "last_activity": datetime.now(UTC)
                 }
             
             self.logger.info(f"Created channel: {channel_id} with {len(participants)} participants")
@@ -258,7 +259,7 @@ class AgentCommunication:
             List[Message]: List of pending messages
         """
         with self._lock:
-            current_time = datetime.utcnow()
+            current_time = datetime.now(UTC)
             messages = [
                 msg for msg in self.message_queue 
                 if msg.to_agent == agent_id 
@@ -297,7 +298,7 @@ class AgentCommunication:
                         msg.status = MessageStatus.ACKNOWLEDGED
                         
                         if msg.channel_id:
-                            self.channel_metadata[msg.channel_id]["last_activity"] = datetime.utcnow()
+                            self.channel_metadata[msg.channel_id]["last_activity"] = datetime.now(UTC)
                             
                         self.logger.info(f"Message acknowledged: {message_id}")
                         return True
@@ -361,7 +362,7 @@ class AgentCommunication:
                     raise ChannelError(f"Channel {channel_id} does not exist")
                 
                 stats = self.channel_metadata[channel_id].copy()
-                current_time = datetime.utcnow()
+                current_time = datetime.now(UTC)
                 
                 stats.update({
                     "active_participants": len(self.active_channels[channel_id]),
@@ -400,7 +401,7 @@ class AgentCommunication:
         """
         try:
             with self._lock:
-                current_time = datetime.utcnow()
+                current_time = datetime.now(UTC)
                 original_size = len(self.message_queue)
                 
                 self.message_queue = deque(
