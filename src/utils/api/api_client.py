@@ -11,6 +11,7 @@ from pathlib import Path
 import json
 import aiohttp
 import yarl
+from asyncio import Lock
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -90,20 +91,15 @@ class APIClient:
         config: APIConfig,
         security: Optional[SecurityProvider] = None
     ):
-        """
-        Initialize APIClient with configuration
-        
-        Args:
-            config: API configuration
-            security: Optional security provider for authentication
-        """
         self.config = config
         self.security = security
         self._session: Optional[aiohttp.ClientSession] = None
         self._rate_limit_tokens = self.config.rate_limit
         self._last_token_refresh = datetime.utcnow()
         self._cache: Dict[str, Tuple[APIResponse, datetime]] = {}
-        
+        self._rate_limit_lock = Lock()
+        self._rate_limit_queue: List[datetime] = []
+
         # Initialize logging
         self._setup_logging()
 
@@ -132,20 +128,27 @@ class APIClient:
         if self._session and not self._session.closed:
             await self._session.close()
 
-    def _check_rate_limit(self) -> bool:
-        """Check if request is within rate limits"""
-        now = datetime.utcnow()
+    async def _check_rate_limit(self) -> bool:
+        """
+        Check if request is within rate limits using sliding window algorithm
+        """
+        async with self._rate_limit_lock:
+            now = datetime.utcnow()
+            window_start = now - timedelta(minutes=1)
         
-        # Refresh tokens every minute
-        if (now - self._last_token_refresh).total_seconds() >= 60:
-            self._rate_limit_tokens = self.config.rate_limit
-            self._last_token_refresh = now
+            # Remove expired timestamps
+            self._rate_limit_queue = [
+                ts for ts in self._rate_limit_queue 
+                if ts > window_start
+            ]
             
-        if self._rate_limit_tokens > 0:
-            self._rate_limit_tokens -= 1
+            # Check if we're within limit
+            if len(self._rate_limit_queue) >= self.config.rate_limit:
+                return False
+                
+            # Add new timestamp
+            self._rate_limit_queue.append(now)
             return True
-            
-        return False
 
     def _get_cache_key(
         self,
@@ -163,7 +166,7 @@ class APIClient:
         self,
         method: RequestMethod,
         endpoint: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Union[str, int, float, bool]]] = None,
         data: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
         use_cache: bool = True
@@ -248,8 +251,8 @@ class APIClient:
     async def get(
         self,
         endpoint: str,
-        params: Optional[Dict[str, Any]] = None,
-        **kwargs
+        params: Optional[Dict[str, Union[str, int, float, bool]]] = None,
+        **kwargs: Any
     ) -> APIResponse:
         """Perform GET request"""
         return await self.request(RequestMethod.GET, endpoint, params=params, **kwargs)
@@ -258,7 +261,7 @@ class APIClient:
         self,
         endpoint: str,
         data: Optional[Dict[str, Any]] = None,
-        **kwargs
+        **kwargs: Any
     ) -> APIResponse:
         """Perform POST request"""
         return await self.request(RequestMethod.POST, endpoint, data=data, **kwargs)
@@ -267,7 +270,7 @@ class APIClient:
         self,
         endpoint: str,
         data: Optional[Dict[str, Any]] = None,
-        **kwargs
+        **kwargs: Any
     ) -> APIResponse:
         """Perform PUT request"""
         return await self.request(RequestMethod.PUT, endpoint, data=data, **kwargs)
@@ -275,7 +278,7 @@ class APIClient:
     async def delete(
         self,
         endpoint: str,
-        **kwargs
+        **kwargs: Any
     ) -> APIResponse:
         """Perform DELETE request"""
         return await self.request(RequestMethod.DELETE, endpoint, **kwargs)
@@ -284,7 +287,7 @@ class APIClient:
         self,
         endpoint: str,
         data: Optional[Dict[str, Any]] = None,
-        **kwargs
+        **kwargs: Any
     ) -> APIResponse:
         """Perform PATCH request"""
         return await self.request(RequestMethod.PATCH, endpoint, data=data, **kwargs)
