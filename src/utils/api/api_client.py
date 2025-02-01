@@ -1,5 +1,5 @@
 # src/utils/api/api_client.py
-# Created: 2025-01-29 21:17:38
+# Created: 2025-02-01 22:05:50
 # Author: Genterr
 
 from typing import Dict, Any, Optional, List, Union, Tuple, Protocol
@@ -12,7 +12,7 @@ import json
 import aiohttp
 import yarl
 from asyncio import Lock
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ class APIClient:
         self.security = security
         self._session: Optional[aiohttp.ClientSession] = None
         self._rate_limit_tokens = self.config.rate_limit
-        self._last_token_refresh = datetime.utcnow()
+        self._last_token_refresh = datetime.now(UTC)
         self._cache: Dict[str, Tuple[APIResponse, datetime]] = {}
         self._rate_limit_lock = Lock()
         self._rate_limit_queue: List[datetime] = []
@@ -133,7 +133,7 @@ class APIClient:
         Check if request is within rate limits using sliding window algorithm
         """
         async with self._rate_limit_lock:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             window_start = now - timedelta(minutes=1)
         
             # Remove expired timestamps
@@ -185,7 +185,7 @@ class APIClient:
         Returns:
             APIResponse object containing response data
         """
-        if not self._check_rate_limit():
+        if not await self._check_rate_limit():
             raise RequestError("Rate limit exceeded")
             
         url = yarl.URL(self.config.base_url) / endpoint.lstrip('/')
@@ -194,7 +194,7 @@ class APIClient:
         # Check cache
         if use_cache and self.config.enable_caching:
             cached = self._cache.get(cache_key)
-            if cached and (datetime.utcnow() - cached[1]).total_seconds() < self.config.cache_ttl:
+            if cached and (datetime.now(UTC) - cached[1]).total_seconds() < self.config.cache_ttl:
                 return cached[0]
         
         # Prepare request
@@ -208,7 +208,7 @@ class APIClient:
         retries = 0
         while retries <= self.config.max_retries:
             try:
-                start_time = datetime.utcnow()
+                start_time = datetime.now(UTC)
                 
                 async with session.request(
                     method.value,
@@ -218,7 +218,7 @@ class APIClient:
                     headers=request_headers,
                     ssl=self.config.verify_ssl
                 ) as response:
-                    duration = (datetime.utcnow() - start_time).total_seconds()
+                    duration = (datetime.now(UTC) - start_time).total_seconds()
                     
                     # Check for error status codes
                     if response.status >= 400:
@@ -230,13 +230,13 @@ class APIClient:
                         status=response.status,
                         data=response_data,
                         headers=dict(response.headers),
-                        timestamp=datetime.utcnow(),
+                        timestamp=datetime.now(UTC),
                         duration=duration
                     )
                     
                     # Update cache
                     if use_cache and self.config.enable_caching:
-                        self._cache[cache_key] = (api_response, datetime.utcnow())
+                        self._cache[cache_key] = (api_response, datetime.now(UTC))
                         
                     return api_response
                     
