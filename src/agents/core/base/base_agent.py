@@ -4,6 +4,8 @@ from uuid import UUID, uuid4
 from datetime import datetime, UTC
 from dataclasses import dataclass
 from enum import Enum
+import json
+from pathlib import Path
 
 # Custom exceptions for better error handling
 class AgentError(Exception):
@@ -117,9 +119,27 @@ class BaseAgent:
         """
         try:
             self.logger.info(f"Initializing agent {self.name}")
-            # Add initialization logic here
+            
+            # Initialize capabilities
+            self.capabilities = {
+                "text_processing": True,
+                "data_analysis": True,
+                "task_execution": True,
+                "error_handling": True
+            }
+            
+            # Validate configuration
+            if not self._validate_config():
+                raise ValueError("Invalid configuration")
+                
+            # Setup resources
+            self._setup_resources()
+            
+            # Set status to active
             self.status = AgentStatus.ACTIVE
+            
             return True
+            
         except Exception as e:
             self.logger.error(f"Initialization failed: {str(e)}")
             self.status = AgentStatus.ERROR
@@ -245,12 +265,81 @@ class BaseAgent:
         """
         try:
             self.logger.info(f"Shutting down agent {self.name}")
-            # Add cleanup logic here
+            self.cleanup()  # Call the new cleanup method
             self.status = AgentStatus.INACTIVE
         except Exception as e:
             self.logger.error(f"Error during shutdown: {str(e)}")
             self.status = AgentStatus.ERROR
             raise AgentError(f"Shutdown failed: {str(e)}")
+
+    def _validate_config(self) -> bool:
+        """Validate agent configuration"""
+        try:
+            if self.config.max_concurrent_tasks < 1:
+                return False
+            if self.config.timeout_seconds < 0:
+                return False
+            if self.config.retry_attempts < 0:
+                return False
+            return True
+        except Exception as e:
+            self.logger.error(f"Config validation failed: {str(e)}")
+            return False
+
+    def _setup_resources(self) -> None:
+        """Setup agent resources"""
+        try:
+            # Create necessary directories
+            self.work_dir = Path(f"work/{self.name}")
+            self.work_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Initialize metrics storage
+            self._init_metrics()
+            
+        except Exception as e:
+            raise AgentError(f"Failed to setup resources: {str(e)}")
+
+    def _init_metrics(self) -> None:
+        """Initialize metrics storage"""
+        self.metrics.update({
+            "initialization_time": datetime.now(UTC).isoformat(),
+            "last_active": datetime.now(UTC).isoformat(),
+            "tasks_in_progress": 0
+        })
+
+    def cleanup(self) -> None:
+        """Cleanup resources before shutdown"""
+        try:
+            self.logger.info(f"Cleaning up agent {self.name}")
+            
+            # Save final metrics
+            self._save_final_metrics()
+            
+            # Clean up work directory
+            if hasattr(self, 'work_dir') and self.work_dir.exists():
+                for file in self.work_dir.glob("*"):
+                    if file.is_file():
+                        file.unlink()
+                self.work_dir.rmdir()
+                
+            self.status = AgentStatus.INACTIVE
+            
+        except Exception as e:
+            self.logger.error(f"Cleanup failed: {str(e)}")
+            self.status = AgentStatus.ERROR
+
+    def _save_final_metrics(self) -> None:
+        """Save final metrics before shutdown"""
+        try:
+            self.metrics["shutdown_time"] = datetime.now(UTC).isoformat()
+            metrics_file = Path(f"logs/metrics_{self.name}.json")
+            metrics_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(metrics_file, "w") as f:
+                json.dump(self.metrics, f, indent=2)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to save final metrics: {str(e)}")
 
     def __repr__(self) -> str:
         """Return string representation of the agent"""
