@@ -1,12 +1,11 @@
 """Test module for custom model implementation."""
 import pytest
+import asyncio
 from pathlib import Path
 from datetime import datetime, UTC
-from uuid import UUID
 import torch
 import gc
 import psutil
-from contextlib import contextmanager 
 from src.agents.models.custom.custom_model import (
     CustomModel,
     ModelConfig,
@@ -18,6 +17,12 @@ from src.agents.models.custom.custom_model import (
 
 class TestModelImplementation(CustomModel):
     """Test implementation of CustomModel with required methods."""
+    
+    def __init__(self, name: str, version: str, config=None, description: str = None):
+        """Initialize the test model implementation."""
+        super().__init__(name=name, version=version, config=config, description=description)
+        self.status = ModelStatus.INITIALIZING
+        self.metrics = ModelMetrics()
     
     async def train(self, training_data, validation_data=None, **kwargs):
         """Implement required train method."""
@@ -37,23 +42,12 @@ class TestModelImplementation(CustomModel):
         self.status = ModelStatus.READY
         return result, confidence
 
-class TestCustomModel:
-    """Test cases for CustomModel class."""
-    
-    def setup_method(self):
-        """Set up test fixtures."""
-        self.model = TestModelImplementation(
-            name="test_model",
-            version="1.0",
-            config=ModelConfig(),
-            description="Test model implementation"
-        )
-    
-    def test_custom_model_initialization(self):
-        """Test that the model initializes correctly."""
-        assert isinstance(self.model, CustomModel)
-        assert self.model.name == "test_model"
-        assert self.model.version == "1.0"
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create and provide a session-scoped event loop."""
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
 
 @pytest.fixture
 def model_config():
@@ -75,3 +69,39 @@ def test_model(model_config):
         config=model_config,
         description="Test model for unit tests"
     )
+
+class TestCustomModel:
+    """Test cases for CustomModel class."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.model = TestModelImplementation(
+            name="test_model",
+            version="1.0",
+            config=ModelConfig(),
+            description="Test model implementation"
+        )
+    
+    def test_custom_model_initialization(self):
+        """Test that the model initializes correctly."""
+        assert isinstance(self.model, CustomModel)
+        assert self.model.name == "test_model"
+        assert self.model.version == "1.0"
+
+    @pytest.mark.asyncio
+    async def test_training_workflow(self):
+        """Test the complete training workflow."""
+        training_data = ["test_data"]
+        result = await self.model.train(training_data)
+        assert "loss" in result
+        assert "accuracy" in result
+        assert self.model.status == ModelStatus.READY
+
+    @pytest.mark.asyncio
+    async def test_prediction_workflow(self):
+        """Test the complete prediction workflow."""
+        input_data = {"test": "data"}
+        prediction, confidence = await self.model.predict(input_data)
+        assert prediction == input_data
+        assert 0 <= confidence <= 1
+        assert self.model.status == ModelStatus.READY
