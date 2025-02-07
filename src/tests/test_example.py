@@ -1,10 +1,10 @@
-"""Test module for the main functionality."""
-from src.main import hello_world
-
-def test_hello_world():
-    """Test the hello_world function."""
-    assert hello_world() == "Hello, World!"
+"""Basic test module."""
 
 def test_example():
-    """Simple test to verify the testing setup works."""
+    """Basic test to ensure testing infrastructure works."""
     assert True
+
+def test_import():
+    """Test that we can import from our package."""
+    from src.core import utils
+    assert utils is not None

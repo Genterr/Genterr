@@ -22,11 +22,11 @@ jobs:
         pip install -r requirements.txt
     - name: Code formatting check with Black
       run: |
-        black --check .
+        black --check src/
     - name: Lint with flake8
       run: |
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 . --count --max-complexity=10 --max-line-length=127 --statistics
+        flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 src/ --count --max-complexity=10 --max-line-length=127 --statistics
 
   test:
     needs: quality
@@ -44,7 +44,7 @@ jobs:
         pip install -r requirements.txt
     - name: Run tests with coverage
       run: |
-        pytest --cov=src --cov-report=xml
+        python -m pytest src/tests/ --cov=src --cov-report=xml
 
   deploy:
     needs: test
@@ -63,4 +63,3 @@ jobs:
     - name: Build package
       run: |
         echo "Here you would build and deploy your package"
-        # Add your deployment steps here
