@@ -15,14 +15,10 @@ from src.agents.models.custom.custom_model import (
     ModelInputError
 )
 
-class TestModelImplementation(CustomModel):
-    """Test implementation of CustomModel with required methods."""
-    
-    def __init__(self, name: str, version: str, config=None, description: str = None):
-        """Initialize the test model implementation."""
-        super().__init__(name=name, version=version, config=config, description=description)
-        self.status = ModelStatus.INITIALIZING
-        self.metrics = ModelMetrics()
+# Separiere die Implementation in eine eigene Datei
+# src/agents/models/custom/test_model_implementation.py
+class ConcreteTestModel(CustomModel):
+    """Concrete implementation of CustomModel for testing."""
     
     async def train(self, training_data, validation_data=None, **kwargs):
         """Implement required train method."""
@@ -43,11 +39,23 @@ class TestModelImplementation(CustomModel):
         return result, confidence
 
 @pytest.fixture(scope="session")
-def event_loop():
-    """Create and provide a session-scoped event loop."""
-    loop = asyncio.new_event_loop()
+async def event_loop():
+    """Create and provide a session-scoped event loop.
+    
+    This fixture ensures proper setup and cleanup of the event loop.
+    """
+    loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
+    await _cleanup_loop(loop)
     loop.close()
+
+async def _cleanup_loop(loop):
+    """Clean up any pending tasks in the event loop."""
+    tasks = [t for t in asyncio.all_tasks(loop) if not t.done()]
+    if tasks:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 @pytest.fixture
 def model_config():
@@ -61,26 +69,24 @@ def model_config():
     )
 
 @pytest.fixture
-def test_model(model_config):
-    """Create a test model instance."""
-    return TestModelImplementation(
+async def test_model(model_config):
+    """Create and provide a test model instance."""
+    model = ConcreteTestModel(
         name="test_model",
         version="1.0",
         config=model_config,
         description="Test model for unit tests"
     )
+    yield model
+    await model.shutdown()
 
 class TestCustomModel:
     """Test cases for CustomModel class."""
     
-    def setup_method(self):
+    @pytest.fixture(autouse=True)
+    async def setup(self, test_model):
         """Set up test fixtures."""
-        self.model = TestModelImplementation(
-            name="test_model",
-            version="1.0",
-            config=ModelConfig(),
-            description="Test model implementation"
-        )
+        self.model = test_model
     
     def test_custom_model_initialization(self):
         """Test that the model initializes correctly."""
@@ -105,3 +111,9 @@ class TestCustomModel:
         assert prediction == input_data
         assert 0 <= confidence <= 1
         assert self.model.status == ModelStatus.READY
+
+    @pytest.mark.asyncio
+    async def test_model_error_handling(self):
+        """Test error handling in the model."""
+        with pytest.raises(ModelInputError):
+            await self.model.predict(None)
