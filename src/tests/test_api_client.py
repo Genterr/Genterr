@@ -1,3 +1,4 @@
+"""Test module for the API client."""
 # src/tests/test_api_client.py
 # Created: 2025-02-01 22:13:07
 # Author: Genterr
@@ -7,7 +8,7 @@ import aiohttp
 import asyncio
 from datetime import datetime, UTC
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
-from utils.api.api_client import (
+from src.utils.api.api_client import (  # Dies ist die geänderte Zeile
     APIClient, 
     APIConfig, 
     APIResponse,

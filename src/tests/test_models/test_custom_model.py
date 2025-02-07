@@ -1,3 +1,4 @@
+"""Test module for custom model implementation."""
 # src/tests/test_models/test_custom_model.py
 import pytest
 from pathlib import Path
@@ -16,12 +17,16 @@ from src.agents.models.custom.custom_model import (
     ModelInputError
 )
 
-class TestCustomModel(CustomModel):
-    """Test implementation of CustomModel"""
-    def __init__(self, name: str, version: str, config=None, description: str = None):
-        super().__init__(name, version, config, description)
-        self.status = ModelStatus.INITIALIZING
-        self.metrics = ModelMetrics()
+class TestCustomModel:
+    """Test cases for CustomModel class."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.model = CustomModel("test_model", "1.0")
+    
+    def test_custom_model_initialization(self):
+        """Test that the model initializes correctly."""
+        assert isinstance(self.model, CustomModel)
 
     @contextmanager
     def resource_manager(self):
