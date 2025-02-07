@@ -1,3 +1,5 @@
+[![Python Tests](https://github.com/Genterr/genterr/actions/workflows/python-tests.yml/badge.svg)](https://github.com/Genterr/genterr/actions/workflows/python-tests.yml)
+
 <div align="center">
   <h1>GENTERR</h1>
   <p><strong>The Future of AI Agent Workforce</strong></p>
