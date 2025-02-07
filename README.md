@@ -1,4 +1,4 @@
-[![Python Tests](https://github.com/Genterr/genterr/actions/workflows/python-tests.yml/badge.svg)](https://github.com/Genterr/genterr/actions/workflows/python-tests.yml)
+[![Python CI/CD Pipeline](https://github.com/Genterr/Genterr/actions/workflows/python-pipeline.yml/badge.svg)](https://github.com/Genterr/Genterr/actions/workflows/python-pipeline.yml)
 
 <div align="center">
   <h1>GENTERR</h1>
