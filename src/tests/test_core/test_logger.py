@@ -37,7 +37,7 @@ def test_logger_initialization(logger):
 def test_logger_file_handler(logger, temp_log_file):
     """Test if file handler is properly configured"""
     assert os.path.exists(temp_log_file)
-    # Verwende die Logger-Methode statt direktem Zugriff
+  
     logger.debug("Test message")
     
     with open(temp_log_file, 'r') as f:
