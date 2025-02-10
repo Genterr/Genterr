@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 class ConfigError(Exception):
     """Configuration related errors"""
@@ -24,7 +24,7 @@ class Config:
                 "name": "genterr",
                 "version": "1.0.0",
                 "debug": False,
-                "created_at": datetime.now(UTC).isoformat()
+                "created_at": datetime.now(timezone.utc).isoformat()
             },
             "model": {
                 "batch_size": 32,
