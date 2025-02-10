@@ -8,7 +8,7 @@ import aiohttp
 import asyncio
 from datetime import datetime, UTC
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
-from src.utils.api.api_client import (  # Dies ist die geänderte Zeile
+from src.utils.api.api_client import (  
     APIClient, 
     APIConfig, 
     APIResponse,
