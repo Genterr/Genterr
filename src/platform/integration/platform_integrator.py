@@ -2,7 +2,7 @@
 # Created: 2025-01-29 19:13:51
 # Author: Genterr
 
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime
@@ -13,6 +13,7 @@ import json
 import aiohttp
 import yaml
 from concurrent.futures import ThreadPoolExecutor
+import os
 
 logger = logging.getLogger(__name__)
 
