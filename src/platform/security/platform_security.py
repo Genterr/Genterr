@@ -15,6 +15,7 @@ import secrets
 import jwt
 from cryptography.fernet import Fernet
 import bcrypt
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ class PlatformSecurity:
     def __init__(self, config: SecurityConfig):
         """Initialize PlatformSecurity with configuration"""
         self.config = config
-        self._encryption_key = Fernet.generate_key()
+        self._encryption_key = os.getenv('ENCRYPTION_KEY').encode()
         self._fernet = Fernet(self._encryption_key)
         self._tokens: Dict[str, AuthToken] = {}
         self._failed_attempts: Dict[str, List[datetime]] = {}
