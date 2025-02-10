@@ -1,6 +1,9 @@
+![Genterr Logo](https://github.com/Genterr/Genterr/blob/main/genterr/images/Dashboard2.png)
+
+
 <div align="center">
   <h1>GENTERR</h1>
-  <p><strong>The Future of AI Agent Workforce</strong></p>
+  <p><strong>The AI Workforce Revolution</strong></p>
   <hr>
 </div>
 
